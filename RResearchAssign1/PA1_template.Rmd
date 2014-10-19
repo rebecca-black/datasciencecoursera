@@ -1,0 +1,158 @@
+---
+title: "PA1_template.Rmd"
+author: "Rebecca Black"
+date: "Sunday, October 19, 2014"
+output: html_document
+---
+The purpose of this study is to answer several questions regarding steps taken by one individual wearing an activity monitoring device. This device collected motion data at 5 minute intervals daily for two months.  These data were collected during October and November, 2012. 
+
+<ul>
+<li>The original collected dataset used for this study is published here: (https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip).</li>
+<li>For this study, the dataset was downloaded on 10/17/2014.</li>
+</ul>
+The questions to answer are:
+<ol>
+<li>What are the mean and median steps per day?</li>
+<li>What is the average daily pattern?</li>
+<li>How to handle missing values using approximations?  What impact does this technique have our our studies?</li>
+<li>Are there differences in activity patterns between weekdays and weekends?</li>
+</ol>
+
+_______________________________
+<h3>Prep Step: Get data if you need it</h3>
+```{r}
+## First step - download if you don't have the file. This code that checks for the dataset, downloads and unzips it as necessary.
+## Uncomment and run the below lines if you need to get the data
+# WD <- getwd()
+# if {(!is.null(WD)) setwd(WD)}
+# check for dataset, download and unzip as necessary
+# if {(!file.exists("activity.csv"))
+#         download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip", "activity.zip" )
+#         unzip("activity.zip")
+```
+<h3>Step 1: Load libraries and pull data into a dataframe for R
+```{r}
+require(knitr)
+require(reshape2)
+require(ggplot2)
+require(plyr)
+ActivityDF <- read.csv("activity.csv", header = TRUE)
+```
+<h3>Question 1: Make a histogram of the total number of steps taken each day
+```{r, echo=TRUE}
+StepsByDateDF <- aggregate(steps ~ date, ActivityDF, FUN=sum, na.rm=FALSE)
+qplot(steps, data = StepsByDateDF, main="Counts of Daily Step Totals", geom="histogram")
+```
+<h3>Question 1: What are the mean and median steps per day?</h3>
+
+Mean
+```{r echo = TRUE}
+StepsMeanByDateDF <- aggregate(steps ~ date, ActivityDF, FUN=mean, na.rm=FALSE)
+qplot(date, steps, data=StepsMeanByDateDF, 
+        main = "Mean Steps by Date")
+```
+
+Median - much less interesting due to "unavailable data"
+```{r echo = TRUE}
+StepsMedianByDateDF <- aggregate(steps ~ date, ActivityDF, FUN=median, na.rm=FALSE)
+qplot(date, steps, data=StepsMedianByDateDF, 
+      main = "Median Steps by Date")
+```
+<h3>Question 2: What is the average daily pattern?
+```{r echo = TRUE}
+## create pivot of average steps per interval across all days
+FiveMinIntDF<- melt(tapply(ActivityDF$steps, INDEX=ActivityDF$interval, 
+                FUN=mean, na.rm=TRUE), 
+                variable.name = "interval", value.name = "steps")
+
+# give var1 a meaningful name
+names(FiveMinIntDF)[names(FiveMinIntDF)=="Var1"] <- "interval"
+
+
+ggplot(FiveMinIntDF, aes(interval,steps)) + geom_line(lwd=.4) + 
+        scale_x_continuous("Five Minute Interval") + 
+        scale_y_continuous("Average Steps") +
+        labs(title = "Average Steps per Five Minute Interval")
+```
+<h3>Question 2: What is the largest average number of steps in a five minute interval?
+```{r echo = TRUE}
+max(FiveMinIntDF$steps)
+```
+<h3>Question 3: Find the number of missing values
+```{r}
+sum(is.na(ActivityDF$steps))
+```
+<h3> Question 3: Devise a strategy to add reasonable approximate data to the Activity data in new, "inferred" dataset.</h3>
+<ol>
+<li> Create a copy of ActivityDF dataset called ActivityInferredDF</li>
+<li> Use the averages per interval calculated in FiveMinIntDF</li>
+<li> Replace the NA's in the ActivityInferredDF dataset with the average steps for that specific interval in FiveMinIntDF</li>
+</ol>
+```{r echo = TRUE}
+#fill in the NA's with averages computed already in FiveMinIntDF
+FillInNAsWithAvg <- function(ActivityDF, FiveMinIntDF){
+        for (i in 1:nrow(ActivityDF)){
+                if (is.na(ActivityDF[i,"steps"])){
+                        ActivityDF[i,"steps"] = 
+                        round(FiveMinIntDF[as.character(FiveMinIntDF$interval) == 
+                        as.character(ActivityDF[i,"interval"]),"steps"])
+                }
+        }
+        ActivityDF   
+}
+ActivityInferredDF <- FillInNAsWithAvg(ActivityDF, FiveMinIntDF)
+```
+<h3>Question 3: Generate a histogram of the total number of steps taken each day with the inferred data</h3>
+```{r echo = TRUE}
+InferredStepsByDateDF <- aggregate(steps ~ date, ActivityInferredDF, 
+                           FUN=sum, na.rm=FALSE)
+qplot(steps, data = InferredStepsByDateDF, main="Counts of Daily Step Totals", geom="histogram")
+```
+<h3>Question 3: What are the Mean and Median for the inferred steps per day? </h3>
+Mean
+```{r echo = TRUE}
+mean(InferredStepsByDateDF$steps)
+
+StepsMeanByDateInfDF <- aggregate(steps ~ date, ActivityInferredDF, 
+                                FUN=mean, na.rm=FALSE)
+qplot(date, steps, data=StepsMeanByDateInfDF, 
+       main = "Inferred Mean Steps by Date")
+```
+Median
+```{r}
+median(InferredStepsByDateDF$steps)
+```
+<h3>Question 3: What impact did inferring data have?</h3>
+Rendering summary statistics before and after the inference
+```{r echo = TRUE}
+summary(StepsMeanByDateDF)
+summary(StepsMeanByDateInfDF)
+```
+<ol>
+<li>The counts of 10,000 and 11,000 step intervals (busy times) increased</li>
+<li>The overall shape of the data remained the same</li>
+<li>The mean and median are the same</li>
+<li>2,304 cases were inferred as shown below:</li>
+```{r}
+before<- complete.cases(ActivityDF)
+after<- complete.cases(ActivityInferredDF)
+table(before)
+table(after)
+```
+<h3>Question 4: Are there differences in activity patterns between weekdays and weekends?</h3>
+```{r echo = TRUE}
+# Add a factor column to denote weekday or weekend 
+ActivityInferredDF$IsDay <- as.factor(ifelse(weekdays(as.Date
+                                (ActivityInferredDF$date)) %in% c("Saturday","Sunday"),
+                                "Weekend", "Weekday")) 
+# ## Recreate dataframe of mean steps per interval with weekday/weekend info
+FiveMinIntDF <- aggregate(steps~interval + IsDay, ActivityInferredDF,
+                          FUN=mean)
+
+ggplot(data = FiveMinIntDF, aes(x = interval, y = steps, group = IsDay)) + geom_line(lwd=.3) + 
+        geom_line(aes(color = IsDay)) +
+        facet_wrap(~ IsDay, nrow=2) + 
+        scale_x_continuous("5 Minute Intervals") + 
+        scale_y_continuous("Average Number of Steps")
+        
+```
